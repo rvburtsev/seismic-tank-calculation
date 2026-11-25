@@ -41,6 +41,46 @@ def get_K1_value(z_H, h0):
     weight = (h0 - h0_1) / (h0_2 - h0_1) if h0_2 != h0_1 else 0
     return k1_1 + weight * (k1_2 - k1_1)
 
+# --- НОВАЯ ФУНКЦИЯ ДЛЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG) ---
+def create_svg_epure(r_m, p_bottom_kpa):
+    size = 500
+    cx, cy = size / 2, size / 2
+    R_px = 180 # Радиус бака на картинке в пикселях
+    
+    max_vec_len = R_px * 0.8
+    scale = max_vec_len / p_bottom_kpa if p_bottom_kpa > 0 else 0
+    
+    svg = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="background-color: transparent; margin: 0 auto; display: block;">']
+    
+    # Оси X и Y (пунктирные)
+    svg.append(f'<line x1="{cx - R_px - 40}" y1="{cy}" x2="{cx + R_px + 40}" y2="{cy}" stroke="#888" stroke-width="1" stroke-dasharray="5,5" />')
+    svg.append(f'<line x1="{cx}" y1="{cy - R_px - 40}" x2="{cx}" y2="{cy + R_px + 40}" stroke="#888" stroke-width="1" stroke-dasharray="5,5" />')
+    
+    # Подписи осей
+    svg.append(f'<text x="{cx + R_px + 45}" y="{cy + 5}" fill="#888" font-family="sans-serif" font-size="14">X</text>')
+    svg.append(f'<text x="{cx - 15}" y="{cy - R_px - 45}" fill="#888" font-family="sans-serif" font-size="14">Y</text>')
+    
+    # Черная окружность (стенка резервуара)
+    svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
+    
+    # Векторы давления
+    for angle in range(0, 360, 10):
+        theta = math.radians(angle)
+        # Формула (21): p = p_max * sin(theta)
+        p_val = abs(p_bottom_kpa * math.sin(theta))
+        L = p_val * scale
+        
+        # Координаты начала (на стенке) и конца (внутри)
+        x1 = cx + R_px * math.cos(theta)
+        y1 = cy + R_px * math.sin(theta)
+        x2 = cx + (R_px - L) * math.cos(theta)
+        y2 = cy + (R_px - L) * math.sin(theta)
+        
+        svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4169E1" stroke-width="2.5" />')
+        
+    svg.append('</svg>')
+    return "".join(svg)
+
 # --- БОКОВАЯ ПАНЕЛЬ ---
 st.sidebar.header("Исходные данные")
 H_input = st.sidebar.number_input("Высота налива H, м", min_value=1.0, value=10.0, step=0.5)
@@ -69,7 +109,7 @@ col_m3.metric("Сейсмичность", f"{int(Kc_input*10+6)} баллов")
 
 st.markdown("---")
 
-# --- ПОСТРОЕНИЕ ГРАФИКОВ (ALTAIR) ---
+# --- ПОСТРОЕНИЕ ГРАФИКОВ ---
 col_graph1, col_graph2 = st.columns([1, 1])
 
 with col_graph1:
@@ -87,58 +127,8 @@ with col_graph1:
 
 with col_graph2:
     st.subheader("Эпюра давления по окружности")
+    st.markdown("Формула (21): pm(θ) = pm * sin(θ)")
     
-    # Подготовка данных для векторов
-    theta_deg = list(range(0, 360, 10)) # Каждые 10 градусов
-    theta_rad = [math.radians(a) for a in theta_deg]
-    
-    # Формула (21): p = p_max * sin(theta). 
-    # Векторы направлены от стенки к центру (показываем давление на стенку)
-    # Масштабируем длину вектора для красоты графика
-    scale = (r_input * 0.8) / (p_bottom/1000) if p_bottom > 0 else 0
-    
-    x_wall = [r_input * math.cos(t) for t in theta_rad]
-    y_wall = [r_input * math.sin(t) for t in theta_rad]
-    
-    # Конец вектора (смещение внутрь)
-    x_end = [(r_input - abs((p_bottom/1000) * math.sin(t)) * scale) * math.cos(t) for t in theta_rad]
-    y_end = [(r_input - abs((p_bottom/1000) * math.sin(t)) * scale) * math.sin(t) for t in theta_rad]
-    
-    df_vec = pd.DataFrame({'x': x_wall, 'y': y_wall, 'x2': x_end, 'y2': y_end})
-    
-    # Контур резервуара
-    circle_rad = [math.radians(a) for a in range(0, 361, 5)]
-    df_circle = pd.DataFrame({
-        'x': [r_input * math.cos(t) for t in circle_rad],
-        'y': [r_input * math.sin(t) for t in circle_rad]
-    })
-    
-    # Оси X и Y
-    df_axes = pd.DataFrame({
-        'x': [-r_input*1.3, r_input*1.3, 0, 0],
-        'y': [0, 0, -r_input*1.3, r_input*1.3]
-    })
-    
-    # Создаем графики
-    chart_circle = alt.Chart(df_circle).mark_line(color='black', strokeWidth=3).encode(
-        x=alt.X('x:Q', scale=alt.Scale(domain=[-r_input*1.4, r_input*1.4]), axis=None),
-        y=alt.Y('y:Q', scale=alt.Scale(domain=[-r_input*1.4, r_input*1.4]), axis=None)
-    )
-    
-    chart_axes = alt.Chart(df_axes).mark_line(color='gray', strokeWidth=1, strokeDash=[5,5]).encode(
-        x='x:Q', y='y:Q'
-    )
-    
-    chart_vec = alt.Chart(df_vec).mark_rule(color='royalblue', strokeWidth=2).encode(
-        x='x:Q', y='y:Q', x2='x2:Q', y2='y2:Q'
-    )
-    
-    # Объединяем всё вместе с жесткой привязкой пропорций 1:1 (чтобы был идеальный круг)
-    final_polar = (chart_axes + chart_circle + chart_vec).properties(
-        width=450, height=450, 
-        title=alt.TitleParams("Формула (21): pm(θ) = pm * sin(θ)", anchor='middle')
-    ).configure_view(
-        strokeWidth=0  # Убираем рамку вокруг графика
-    )
-    
-    st.altair_chart(final_polar)
+    # Генерируем SVG картинку и выводим её
+    svg_image = create_svg_epure(r_input, p_bottom / 1000)
+    st.markdown(svg_image, unsafe_allow_html=True)
