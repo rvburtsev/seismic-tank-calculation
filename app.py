@@ -1,16 +1,16 @@
 import streamlit as st
 import math
+import plotly.graph_objects as go
+import pandas as pd
 
+# --- НАСТРОЙКА СТРАНИЦЫ ---
 st.set_page_config(page_title="Сейсмика СН 326-65", layout="wide")
 st.title("Расчет сейсмического давления на резервуар")
-st.markdown("Согласно **СН 326-65**, раздел 7 (квазистатический метод)")
+st.markdown("Согласно **СН 326-65**, раздел 7. Эпюры гидродинамического давления.")
 
-# --- Функция для получения K1 (упрощенная интерполяция без numpy) ---
+# --- ФУНКЦИЯ РАСЧЕТА K1 ---
 def get_K1_value(z_H, h0):
-    # Точки с графика (z/H : K1)
     z_pts = [0.0, 0.2, 0.4, 0.6, 0.8, 1.0]
-    
-    # Кривые для разных h0 (визуальная оценка по графику)
     curves = {
         0.5: [1.00, 0.96, 0.88, 0.70, 0.40, 0.0],
         0.75: [1.00, 0.92, 0.80, 0.60, 0.30, 0.0],
@@ -18,10 +18,7 @@ def get_K1_value(z_H, h0):
         1.5: [1.00, 0.85, 0.65, 0.40, 0.15, 0.0],
         2.0: [1.00, 0.80, 0.60, 0.40, 0.20, 0.0]
     }
-    
-    h0 = max(0.5, min(h0, 2.0)) # Ограничиваем h0
-    
-    # Находим ближайшие кривые
+    h0 = max(0.5, min(h0, 2.0))
     keys = sorted(curves.keys())
     for i in range(len(keys)-1):
         if keys[i] <= h0 <= keys[i+1]:
@@ -32,7 +29,6 @@ def get_K1_value(z_H, h0):
         
     c1, c2 = curves[h0_1], curves[h0_2]
     
-    # Интерполяция по z/H для двух кривых
     def interp_z(pts, z):
         for i in range(len(z_pts)-1):
             if z_pts[i] <= z <= z_pts[i+1]:
@@ -42,12 +38,10 @@ def get_K1_value(z_H, h0):
         
     k1_1 = interp_z(c1, z_H)
     k1_2 = interp_z(c2, z_H)
-    
-    # Интерполяция между кривыми по h0
     weight = (h0 - h0_1) / (h0_2 - h0_1) if h0_2 != h0_1 else 0
     return k1_1 + weight * (k1_2 - k1_1)
 
-# --- Боковая панель ---
+# --- БОКОВАЯ ПАНЕЛЬ ---
 st.sidebar.header("Исходные данные")
 H_input = st.sidebar.number_input("Высота налива H, м", min_value=1.0, value=10.0, step=0.5)
 r_input = st.sidebar.number_input("Радиус резервуара r, м", min_value=1.0, value=15.0, step=0.5)
@@ -55,44 +49,89 @@ rho_input = st.sidebar.number_input("Плотность жидкости, кг/�
 Kc_input = st.sidebar.selectbox(
     "Сейсмичность (Kc)", 
     options=[0.1, 0.2, 0.4], 
-    format_func=lambda x: f"{x} (соответствует {int(x*10+6)} баллам)"
+    format_func=lambda x: f"{x} ({int(x*10+6)} баллов)"
 )
 
-# --- Расчет ---
+# --- РАСЧЕТ ---
 g = 9.81
 gamma = rho_input * g
 h0 = H_input / r_input
 
-# Генерируем 20 точек по высоте для графика
-z_points = [H_input * i / 20 for i in range(21)]
-p_points = []
-for z in z_points:
-    z_H = z / H_input
-    K1 = get_K1_value(z_H, h0)
-    p_points.append(gamma * r_input * Kc_input * K1)
+z_points = [H_input * i / 50 for i in range(51)]
+p_points = [gamma * r_input * Kc_input * get_K1_value(z / H_input, h0) for z in z_points]
+p_bottom = p_points[0]
 
-p_bottom = p_points[0] # Давление у дна
+# --- ВЫВОД РЕЗУЛЬТАТОВ (КАРТОЧКИ) ---
+col_m1, col_m2, col_m3 = st.columns(3)
+col_m1.metric("Максимальное давление (у дна)", f"{p_bottom/1000:.2f} кПа")
+col_m2.metric("Параметр h0 = H/r", f"{h0:.2f}")
+col_m3.metric("Сейсмичность", f"{int(Kc_input*10+6)} баллов")
 
-# --- Вывод результатов ---
-col1, col2 = st.columns(2)
+# --- ГРАФИКИ ---
+st.markdown("---")
+col_graph1, col_graph2 = st.columns([1, 1])
 
-with col1:
-    st.subheader("Результаты")
-    st.info(f"**Максимальное давление у дна:** {p_bottom/1000:.2f} кПа")
-    mid_idx = len(p_points) // 2
-    st.info(f"**Давление на середине:** {p_points[mid_idx]/1000:.2f} кПа")
-    st.info(f"**Параметр h0 = H/r:** {h0:.2f}")
-
-with col2:
+with col_graph1:
     st.subheader("Эпюра по высоте")
-    # Используем встроенный график Streamlit
-    chart_data = {"Высота z, м": z_points, "Давление, кПа": [p/1000 for p in p_points]}
-    st.line_chart(chart_data, x="Высота z, м", y="Давление, кПа", color="#FF4B4B")
+    # Красивая заливка эпюры
+    fig1 = go.Figure()
+    fig1.add_trace(go.Scatter(
+        x=[p/1000 for p in p_points], y=z_points,
+        fill='tozerox', mode='lines',
+        line_color='crimson', name='Давление'
+    ))
+    fig1.update_layout(
+        xaxis_title="Давление \(p_m(z)\), кПа",
+        yaxis_title="Высота \(z\), м",
+        yaxis=dict(range=[0, H_input], showgrid=True, gridcolor='lightgray'),
+        xaxis=dict(showgrid=True, gridcolor='lightgray'),
+        plot_bgcolor='white',
+        margin=dict(l=20, r=20, t=20, b=20)
+    )
+    st.plotly_chart(fig1, use_container_width=True)
 
-st.subheader("Распределение давления по окружности (вид сверху)")
-# Строим график в полярных координатах с помощью простого bar chart
-st.bar_chart(
-    {"Давление, кПа": [p_bottom/1000 * math.sin(math.radians(a)) for a in range(0, 360, 10)]},
-    height=300
-)
-st.caption("График показывает давление в кольцевом сечении у дна (формула 21: p = p_max * sin(θ)).")
+with col_graph2:
+    st.subheader("Эпюра по окружности (вид сверху)")
+    # Строим полярный график (вид сверху как на Рис. 11)
+    # Значения угла от 0 до 360
+    theta = [math.radians(a) for a in range(0, 361, 5)]
+    
+    # Формула (21): p = p_max * sin(theta).
+    # Для наглядности берем абсолютное значение, чтобы "бабочка" была ровной
+    p_circle = [abs((p_bottom/1000) * math.sin(t)) for t in theta]
+    
+    fig2 = go.Figure()
+    fig2.add_trace(go.Barpolar(
+        r=p_circle,
+        theta=theta,
+        width=[5]*len(theta),
+        marker_color='royalblue',
+        marker_line_color='black',
+        marker_line_width=1,
+        opacity=0.8,
+        name='Давление'
+    ))
+    
+    # Настраиваем оси полярной системы координат
+    fig2.update_layout(
+        polar=dict(
+            radialaxis=dict(
+                title="Давление, кПа",
+                angle=90,
+                tickangle=90,
+                showline=True,
+                gridcolor='lightgray'
+            ),
+            angularaxis=dict(
+                direction="clockwise",
+                period=360,
+                rotation=90, # Поворачиваем так, чтобы ось X была горизонтально (как на чертеже)
+                gridcolor='lightgray'
+            )
+        ),
+        margin=dict(l=40, r=40, t=40, b=40),
+        showlegend=False
+    )
+    st.plotly_chart(fig2, use_container_width=True)
+    
+st.info("Примечание: По оси \(x\) (0° и 180°) давление равно нулю. Максимум давления достигается по оси \(y\) (90° и 270°).")
