@@ -2,29 +2,32 @@ import streamlit as st
 import math
 import altair as alt
 import pandas as pd
+import numpy as np
 
 # --- НАСТРОЙКА СТРАНИЦЫ ---
 st.set_page_config(page_title="Сейсмика СН 326-65", layout="wide")
 st.title("Расчет сейсмического давления на резервуар")
 st.markdown("Согласно **СН 326-65**, раздел 7. Эпюры гидродинамического давления.")
 
-# --- ФУНКЦИЯ РАСЧЕТА K1 (УТОЧНЕННАЯ) ---
+# --- ФУНКЦИЯ РАСЧЕТА K1 (УТОЧНЕННАЯ ПО ГРАФИКУ РИС. 10) ---
 def get_K1_value(z_H, h0):
-    # Добавили промежуточные точки (0.8 и 0.9), чтобы точнее передать форму кривой
-    z_pts = [0.0, 0.2, 0.4, 0.6, 0.8, 0.9, 1.0]
+    # Берем 11 точек по высоте для идеально гладкой кривой
+    z_pts = np.array([0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
     
-    # Уточненные значения по графику Рис. 10 (для цилиндрических резервуаров)
-    # В нижней части K1 падает медленно (образуя прямую эпюру), в верхней - резко
+    # Оцифрованные значения с высокой точностью
     curves = {
-        0.5: [1.00, 0.85, 0.70, 0.55, 0.35, 0.15, 0.0],
-        0.75:[1.00, 0.92, 0.83, 0.70, 0.48, 0.25, 0.0],
-        1.0: [1.00, 0.97, 0.90, 0.78, 0.55, 0.30, 0.0],
-        1.5: [1.00, 0.99, 0.95, 0.85, 0.65, 0.40, 0.0],
-        2.0: [1.00, 1.00, 0.98, 0.90, 0.70, 0.45, 0.0]
+        0.5: [0.35, 0.35, 0.36, 0.37, 0.38, 0.41, 0.45, 0.53, 0.65, 0.82, 1.00],
+        0.75:[0.43, 0.43, 0.44, 0.46, 0.47, 0.51, 0.55, 0.63, 0.75, 0.88, 1.00],
+        1.0: [0.50, 0.51, 0.52, 0.54, 0.56, 0.60, 0.65, 0.72, 0.82, 0.92, 1.00],
+        1.5: [0.58, 0.59, 0.60, 0.62, 0.64, 0.69, 0.75, 0.81, 0.88, 0.95, 1.00],
+        2.0: [0.65, 0.66, 0.68, 0.70, 0.74, 0.79, 0.84, 0.88, 0.93, 0.97, 1.00]
     }
     
+    # Ограничиваем h0 в пределах графика
     h0 = max(0.5, min(h0, 2.0))
     keys = sorted(curves.keys())
+    
+    # Находим два ближайших графика для интерполяции
     for i in range(len(keys)-1):
         if keys[i] <= h0 <= keys[i+1]:
             h0_1, h0_2 = keys[i], keys[i+1]
@@ -32,18 +35,14 @@ def get_K1_value(z_H, h0):
     else:
         h0_1, h0_2 = keys[0], keys[1]
         
-    c1, c2 = curves[h0_1], curves[h0_2]
+    c1 = np.array(curves[h0_1])
+    c2 = np.array(curves[h0_2])
     
-    def interp_z(pts, z):
-        for i in range(len(z_pts)-1):
-            if z_pts[i] <= z <= z_pts[i+1]:
-                t = (z - z_pts[i]) / (z_pts[i+1] - z_pts[i])
-                return pts[i] + t * (pts[i+1] - pts[i])
-        return pts[-1] if z > 1 else pts[0]
-        
-    k1_1 = interp_z(c1, z_H)
-    k1_2 = interp_z(c2, z_H)
+    # Интерполируем K1 по высоте для двух найденных кривых
+    k1_1 = np.interp(z_H, z_pts, c1)
+    k1_2 = np.interp(z_H, z_pts, c2)
     
+    # Интерполируем между двумя кривыми по h0
     weight = (h0 - h0_1) / (h0_2 - h0_1) if h0_2 != h0_1 else 0
     return k1_1 + weight * (k1_2 - k1_1)
 
@@ -58,18 +57,18 @@ def create_svg_epure(p_bottom_kpa):
     
     svg = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="background-color: transparent; margin: 0 auto; display: block;">']
     
-    # Штриховка
+    # 1. Штриховка
     svg.append('<defs>')
     svg.append('<pattern id="hatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">')
     svg.append('<line x1="0" y1="0" x2="0" y2="8" stroke="#4169E1" stroke-width="1.5" />')
     svg.append('</pattern>')
     svg.append('</defs>')
     
-    # Оси
+    # 2. Оси координат
     svg.append(f'<line x1="{cx - R_px - max_len - 40}" y1="{cy}" x2="{cx + R_px + max_len + 40}" y2="{cy}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     svg.append(f'<line x1="{cx}" y1="{cy - R_px - max_len - 40}" x2="{cx}" y2="{cy + R_px + max_len + 40}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     
-    # Заштрихованная область
+    # 3. Заштрихованная область (внешний контур + внутренний круг)
     path_d = f"M {cx + R_px},{cy} " 
     for angle in range(0, 361, 2):
         theta = math.radians(angle)
@@ -86,7 +85,7 @@ def create_svg_epure(p_bottom_kpa):
     path_d += "Z"
     svg.append(f'<path d="{path_d}" fill="url(#hatch)" stroke="none" />')
     
-    # Внешний контур
+    # 4. Внешняя граница эпюры
     envelope_points = []
     for angle in range(0, 361, 2):
         theta = math.radians(angle)
@@ -98,10 +97,10 @@ def create_svg_epure(p_bottom_kpa):
     envelope_path = "M " + " L ".join(envelope_points)
     svg.append(f'<path d="{envelope_path}" fill="none" stroke="#4169E1" stroke-width="2.5" />')
     
-    # Стенка
+    # 5. Стенка резервуара
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
             
-    # Подписи
+    # 6. Подписи
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 50}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="middle">Y</text>')
     svg.append(f'<text x="{cx + R_px + max_len + 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="start">X</text>')
     svg.append(f'<text x="{cx - R_px - max_len - 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="end">X</text>')
@@ -109,7 +108,6 @@ def create_svg_epure(p_bottom_kpa):
     p_text = f"{p_bottom_kpa:.1f} кПа"
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 25}" fill="#4169E1" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">{p_text}</text>')
     svg.append(f'<text x="{cx}" y="{cy + R_px + max_len + 35}" fill="#4169E1" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">{p_text}</text>')
-    
     svg.append(f'<text x="{cx - 15}" y="{cy - 10}" fill="#aaa" font-family="sans-serif" font-size="14">0</text>')
     
     svg.append('</svg>')
@@ -117,7 +115,7 @@ def create_svg_epure(p_bottom_kpa):
 
 # --- БОКОВАЯ ПАНЕЛЬ ---
 st.sidebar.header("Исходные данные")
-H_input = st.sidebar.number_input("Высота налива H, м", min_value=1.0, value=10.0, step=0.5)
+H_input = st.sidebar.number_input("Высота налива (глубина слоя) H, м", min_value=1.0, value=10.0, step=0.5)
 r_input = st.sidebar.number_input("Радиус резервуара r, м", min_value=1.0, value=15.0, step=0.5)
 rho_input = st.sidebar.number_input("Плотность жидкости, кг/м³", min_value=500.0, value=850.0, step=10.0)
 Kc_input = st.sidebar.selectbox(
@@ -131,15 +129,15 @@ g = 9.81
 gamma = rho_input * g
 h0 = H_input / r_input
 
-# Для левого графика берем точки строго до уровня налива (от дна до H)
-z_points = [H_input * i / 100 for i in range(101)]
+# Точки по высоте (от дна до уровня налива)
+z_points = np.linspace(0, H_input, 100)
 p_points = []
 
 for z in z_points:
     z_H = z / H_input
     K1 = get_K1_value(z_H, h0)
     p_val = gamma * r_input * Kc_input * K1
-    p_points.append(p_val / 1000) # сразу в кПа
+    p_points.append(p_val / 1000) # в кПа
 
 p_bottom = p_points[0]
 
@@ -160,7 +158,7 @@ with col_graph1:
     
     df_height = pd.DataFrame({"Высота z, м": z_points, "Давление, кПа": p_points})
     
-    # Строим эпюру. Теперь благодаря точным K1 она должна иметь прямую часть внизу.
+    # Строим эпюру. Благодаря точным K1, она будет иметь прямую нижнюю часть и закругление вверху.
     chart1 = alt.Chart(df_height).mark_area(
         color='crimson', opacity=0.4, line={'color': 'crimson', 'strokeWidth': 2}
     ).encode(
