@@ -41,11 +41,11 @@ def get_K1_value(z_H, h0):
     weight = (h0 - h0_1) / (h0_2 - h0_1) if h0_2 != h0_1 else 0
     return k1_1 + weight * (k1_2 - k1_1)
 
-# --- НОВАЯ ФУНКЦИЯ ДЛЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG) ---
+# --- ФУНКЦИЯ ДЛЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG) С ПОДПИСЯМИ ---
 def create_svg_epure(r_m, p_bottom_kpa):
-    size = 500
+    size = 550 # Немного увеличили размер холста для подписей
     cx, cy = size / 2, size / 2
-    R_px = 180 # Радиус бака на картинке в пикселях
+    R_px = 160 # Радиус бака на картинке в пикселях
     
     max_vec_len = R_px * 0.8
     scale = max_vec_len / p_bottom_kpa if p_bottom_kpa > 0 else 0
@@ -53,12 +53,23 @@ def create_svg_epure(r_m, p_bottom_kpa):
     svg = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="background-color: transparent; margin: 0 auto; display: block;">']
     
     # Оси X и Y (пунктирные)
-    svg.append(f'<line x1="{cx - R_px - 40}" y1="{cy}" x2="{cx + R_px + 40}" y2="{cy}" stroke="#888" stroke-width="1" stroke-dasharray="5,5" />')
-    svg.append(f'<line x1="{cx}" y1="{cy - R_px - 40}" x2="{cx}" y2="{cy + R_px + 40}" stroke="#888" stroke-width="1" stroke-dasharray="5,5" />')
+    svg.append(f'<line x1="{cx - R_px - 50}" y1="{cy}" x2="{cx + R_px + 50}" y2="{cy}" stroke="#888" stroke-width="1" stroke-dasharray="5,5" />')
+    svg.append(f'<line x1="{cx}" y1="{cy - R_px - 50}" x2="{cx}" y2="{cy + R_px + 50}" stroke="#888" stroke-width="1" stroke-dasharray="5,5" />')
     
     # Подписи осей
-    svg.append(f'<text x="{cx + R_px + 45}" y="{cy + 5}" fill="#888" font-family="sans-serif" font-size="14">X</text>')
-    svg.append(f'<text x="{cx - 15}" y="{cy - R_px - 45}" fill="#888" font-family="sans-serif" font-size="14">Y</text>')
+    svg.append(f'<text x="{cx + R_px + 55}" y="{cy + 5}" fill="#aaa" font-family="sans-serif" font-size="14">X</text>')
+    svg.append(f'<text x="{cx - 5}" y="{cy - R_px - 55}" fill="#aaa" font-family="sans-serif" font-size="14">Y</text>')
+    
+    # Подписи значений (давлений)
+    # В центре 0
+    svg.append(f'<text x="{cx + 5}" y="{cy - 5}" fill="#aaa" font-family="sans-serif" font-size="12">0</text>')
+    
+    # Вверху и внизу (максимальное давление)
+    p_text = f"{p_bottom_kpa:.1f} кПа"
+    # Сверху (у стенки)
+    svg.append(f'<text x="{cx + 10}" y="{cy - R_px + 15}" fill="#aaa" font-family="sans-serif" font-size="12">{p_text}</text>')
+    # Снизу (у стенки)
+    svg.append(f'<text x="{cx + 10}" y="{cy + R_px - 5}" fill="#aaa" font-family="sans-serif" font-size="12">{p_text}</text>')
     
     # Черная окружность (стенка резервуара)
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
@@ -114,6 +125,8 @@ col_graph1, col_graph2 = st.columns([1, 1])
 
 with col_graph1:
     st.subheader("Эпюра по высоте")
+    st.markdown("Давление: **pm(z) = γ · r · Kc · K1**")
+    
     df_height = pd.DataFrame({"Высота z, м": z_points, "Давление, кПа": [p/1000 for p in p_points]})
     
     chart1 = alt.Chart(df_height).mark_area(
@@ -121,13 +134,13 @@ with col_graph1:
     ).encode(
         x=alt.X('Давление, кПа:Q', title='Давление pm(z), кПа'),
         y=alt.Y('Высота z, м:Q', title='Высота z, м', scale=alt.Scale(domain=[0, H_input]))
-    ).properties(height=450)
+    ).properties(height=480)
     
     st.altair_chart(chart1, use_container_width=True)
 
 with col_graph2:
     st.subheader("Эпюра давления по окружности")
-    st.markdown("Формула (21): pm(θ) = pm * sin(θ)")
+    st.markdown("Давление: **pm(θ) = pm · sin(θ)**")
     
     # Генерируем SVG картинку и выводим её
     svg_image = create_svg_epure(r_input, p_bottom / 1000)
