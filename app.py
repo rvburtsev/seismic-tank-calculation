@@ -1,6 +1,6 @@
 import streamlit as st
 import math
-import plotly.graph_objects as go
+import altair as alt
 import pandas as pd
 
 # --- НАСТРОЙКА СТРАНИЦЫ ---
@@ -67,71 +67,65 @@ col_m1.metric("Максимальное давление (у дна)", f"{p_bott
 col_m2.metric("Параметр h0 = H/r", f"{h0:.2f}")
 col_m3.metric("Сейсмичность", f"{int(Kc_input*10+6)} баллов")
 
-# --- ГРАФИКИ ---
 st.markdown("---")
+
+# --- ПОСТРОЕНИЕ ГРАФИКОВ (ALTAIR) ---
 col_graph1, col_graph2 = st.columns([1, 1])
 
 with col_graph1:
     st.subheader("Эпюра по высоте")
-    # Красивая заливка эпюры
-    fig1 = go.Figure()
-    fig1.add_trace(go.Scatter(
-        x=[p/1000 for p in p_points], y=z_points,
-        fill='tozerox', mode='lines',
-        line_color='crimson', name='Давление'
-    ))
-    fig1.update_layout(
-        xaxis_title="Давление \(p_m(z)\), кПа",
-        yaxis_title="Высота \(z\), м",
-        yaxis=dict(range=[0, H_input], showgrid=True, gridcolor='lightgray'),
-        xaxis=dict(showgrid=True, gridcolor='lightgray'),
-        plot_bgcolor='white',
-        margin=dict(l=20, r=20, t=20, b=20)
-    )
-    st.plotly_chart(fig1, use_container_width=True)
+    # Готовим данные для Altair
+    df_height = pd.DataFrame({"Высота z, м": z_points, "Давление, кПа": [p/1000 for p in p_points]})
+    
+    # Строим красивую закрашенную эпюру
+    chart1 = alt.Chart(df_height).mark_area(
+        color='crimson', opacity=0.4, line={'color': 'crimson', 'strokeWidth': 2}
+    ).encode(
+        x=alt.X('Давление, кПа:Q', title='Давление \(p_m(z)\), кПа'),
+        y=alt.Y('Высота z, м:Q', title='Высота \(z\), м', scale=alt.Scale(domain=[0, H_input]))
+    ).properties(height=400)
+    
+    st.altair_chart(chart1, use_container_width=True)
 
 with col_graph2:
-    st.subheader("Эпюра по окружности (вид сверху)")
-    # Строим полярный график (вид сверху как на Рис. 11)
-    # Значения угла от 0 до 360
-    theta = [math.radians(a) for a in range(0, 361, 5)]
-    
-    # Формула (21): p = p_max * sin(theta).
-    # Для наглядности берем абсолютное значение, чтобы "бабочка" была ровной
+    st.subheader("Вид сверху (Рис. 11)")
+    # Строим векторы давления (стрелки), как на чертеже
+    theta = [math.radians(a) for a in range(0, 361, 10)]
+    # Давление по формуле p = p_max * sin(theta)
     p_circle = [abs((p_bottom/1000) * math.sin(t)) for t in theta]
     
-    fig2 = go.Figure()
-    fig2.add_trace(go.Barpolar(
-        r=p_circle,
-        theta=theta,
-        width=[5]*len(theta),
-        marker_color='royalblue',
-        marker_line_color='black',
-        marker_line_width=1,
-        opacity=0.8,
-        name='Давление'
-    ))
+    # Переводим в координаты X, Y для рисования
+    x_start = [r_input * math.cos(t) for t in theta]
+    y_start = [r_input * math.sin(t) for t in theta]
+    # Длина вектора зависит от давления (масштабируем для красоты)
+    scale_factor = r_input / (p_bottom/1000) * 0.8 if p_bottom > 0 else 0
+    x_end = [(r_input - p * scale_factor) * math.cos(t) for p, t in zip(p_circle, theta)]
+    y_end = [(r_input - p * scale_factor) * math.sin(t) for p, t in zip(p_circle, theta)]
     
-    # Настраиваем оси полярной системы координат
-    fig2.update_layout(
-        polar=dict(
-            radialaxis=dict(
-                title="Давление, кПа",
-                angle=90,
-                tickangle=90,
-                showline=True,
-                gridcolor='lightgray'
-            ),
-            angularaxis=dict(
-                direction="clockwise",
-                period=360,
-                rotation=90, # Поворачиваем так, чтобы ось X была горизонтально (как на чертеже)
-                gridcolor='lightgray'
-            )
-        ),
-        margin=dict(l=40, r=40, t=40, b=40),
-        showlegend=False
+    df_polar = pd.DataFrame({'x': x_start, 'y': y_start, 'x2': x_end, 'y2': y_end})
+    
+    # Рисуем контур резервуара (окружность)
+    circle_theta = [math.radians(a) for a in range(0, 361, 5)]
+    df_circle = pd.DataFrame({
+        'x': [r_input * math.cos(t) for t in circle_theta],
+        'y': [r_input * math.sin(t) for t in circle_theta]
+    })
+    
+    # График векторов
+    chart_vec = alt.Chart(df_polar).mark_rule(color='royalblue', strokeWidth=2).encode(
+        x='x:Q', y='y:Q', x2='x2:Q', y2='y2:Q'
     )
-    st.plotly_chart(fig2, use_container_width=True)
     
-st.info("Примечание: По оси \(x\) (0° и 180°) давление равно нулю. Максимум давления достигается по оси \(y\) (90° и 270°).")
+    # График контура
+    chart_circle = alt.Chart(df_circle).mark_line(color='black', strokeWidth=2).encode(
+        x=alt.X('x:Q', scale=alt.Scale(domain=[-r_input*1.2, r_input*1.2])),
+        y=alt.Y('y:Q', scale=alt.Scale(domain=[-r_input*1.2, r_input*1.2]))
+    )
+    
+    # Объединяем графики
+    final_polar = (chart_circle + chart_vec).properties(
+        height=400,
+        # Отключаем сетку и оси для красоты, как на чертеже
+    ).configure_axis(grid=False, domain=False, labels=False, ticks=False, title=None)
+    
+    st.altair_chart(final_polar, use_container_width=True)
