@@ -52,7 +52,7 @@ def create_svg_epure(p_bottom_kpa):
     
     svg = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="background-color: transparent; margin: 0 auto; display: block;">']
     
-    # 1. Маркер для стрелки (указывает НАРУЖУ)
+    # 1. Маркер для стрелки (указывает на КОНЕЦ линии)
     svg.append('<defs>')
     svg.append('<marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">')
     svg.append('<path d="M 0 0 L 10 5 L 0 10 z" fill="#4169E1" />')
@@ -68,7 +68,7 @@ def create_svg_epure(p_bottom_kpa):
     svg.append(f'<line x1="{cx - R_px - max_len - 40}" y1="{cy}" x2="{cx + R_px + max_len + 40}" y2="{cy}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     svg.append(f'<line x1="{cx}" y1="{cy - R_px - max_len - 40}" x2="{cx}" y2="{cy + R_px + max_len + 40}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     
-    # 4. Формируем заштрихованную область (внешний контур + внутренний круг)
+    # 4. Формируем заштрихованную область
     path_d = f"M {cx + R_px},{cy} " 
     for angle in range(0, 361, 2):
         theta = math.radians(angle)
@@ -101,36 +101,31 @@ def create_svg_epure(p_bottom_kpa):
     # 6. Стенка резервуара
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
     
-    # 7. Векторы давления (НАЧИНАЮТСЯ ОТ СТЕНКИ И ИДУТ НАРУЖУ)
+    # 7. Векторы давления (ОТ ВНЕШНЕЙ ЭПЮРЫ К СТЕНКЕ)
     for angle in range(0, 360, 10):
         theta = math.radians(angle)
         p_val = abs(p_bottom_kpa * math.sin(theta))
         L = p_val * scale
         
-        if L > 2: # Если давление не ноль
-            # Начало на стенке
-            x1 = cx + R_px * math.cos(theta)       
-            y1 = cy + R_px * math.sin(theta)
-            # Конец на внешней эпюре
-            x2 = cx + (R_px + L) * math.cos(theta) 
-            y2 = cy + (R_px + L) * math.sin(theta)
+        if L > 2:
+            # Начало на внешней эпюре
+            x1 = cx + (R_px + L) * math.cos(theta) 
+            y1 = cy + (R_px + L) * math.sin(theta)
+            # Конец на стенке (острие стрелки)
+            x2 = cx + R_px * math.cos(theta)       
+            y2 = cy + R_px * math.sin(theta)
             
-            # Линия от стенки наружу с маркером
             svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4169E1" stroke-width="2" marker-end="url(#arrow)" />')
             
     # 8. Подписи осей и значений
-    # Ось Y
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 50}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="middle">Y</text>')
-    # Ось X
     svg.append(f'<text x="{cx + R_px + max_len + 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="start">X</text>')
     svg.append(f'<text x="{cx - R_px - max_len - 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="end">X</text>')
     
-    # Значения давления
     p_text = f"{p_bottom_kpa:.1f} кПа"
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 25}" fill="#4169E1" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">{p_text}</text>')
     svg.append(f'<text x="{cx}" y="{cy + R_px + max_len + 35}" fill="#4169E1" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">{p_text}</text>')
     
-    # Ноль
     svg.append(f'<text x="{cx - 15}" y="{cy - 10}" fill="#aaa" font-family="sans-serif" font-size="14">0</text>')
     
     svg.append('</svg>')
