@@ -41,42 +41,34 @@ def get_K1_value(z_H, h0):
     weight = (h0 - h0_1) / (h0_2 - h0_1) if h0_2 != h0_1 else 0
     return k1_1 + weight * (k1_2 - k1_1)
 
-# --- ФУНКЦИЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG ТОЧНО ПО ЧЕРТЕЖУ) ---
+# --- ФУНКЦИЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG) ---
 def create_svg_epure(p_bottom_kpa):
     size = 600
     cx, cy = size / 2, size / 2
-    R_px = 150         # Радиус резервуара на картинке
-    max_len = 100      # Максимальная длина вектора (для эпюры)
+    R_px = 150         # Радиус резервуара
+    max_len = 100      # Максимальная длина вектора давления
     
     scale = max_len / p_bottom_kpa if p_bottom_kpa > 0 else 0
     
     svg = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="background-color: transparent; margin: 0 auto; display: block;">']
     
-    # 1. Определения (маркер для стрелок и штриховка)
+    # 1. Маркер для стрелки (указывает НАРУЖУ)
     svg.append('<defs>')
-    svg.append('<marker id="arrow" viewBox="0 0 10 10" refX="0" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">')
-    svg.append('<path d="M 10 0 L 0 5 L 10 10 z" fill="#4169E1" />') # Стрелка направлена внутрь (к refX=0)
+    svg.append('<marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">')
+    svg.append('<path d="M 0 0 L 10 5 L 0 10 z" fill="#4169E1" />')
     svg.append('</marker>')
+    
+    # 2. Штриховка
     svg.append('<pattern id="hatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">')
     svg.append('<line x1="0" y1="0" x2="0" y2="8" stroke="#4169E1" stroke-width="1.5" />')
     svg.append('</pattern>')
     svg.append('</defs>')
     
-    # 2. Оси координат (пунктирные)
+    # 3. Оси координат
     svg.append(f'<line x1="{cx - R_px - max_len - 40}" y1="{cy}" x2="{cx + R_px + max_len + 40}" y2="{cy}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     svg.append(f'<line x1="{cx}" y1="{cy - R_px - max_len - 40}" x2="{cx}" y2="{cy + R_px + max_len + 40}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     
-    # 3. Формируем контур эпюры (внешняя граница давления)
-    envelope_points = []
-    for angle in range(0, 361, 2):
-        theta = math.radians(angle)
-        p_val = abs(p_bottom_kpa * math.sin(theta))
-        L = p_val * scale
-        x = cx + (R_px + L) * math.cos(theta)
-        y = cy + (R_px + L) * math.sin(theta)
-        envelope_points.append(f"{x:.1f},{y:.1f}")
-        
-    # Замкнутый путь для штриховки (внешний контур + внутренний круг)
+    # 4. Формируем заштрихованную область (внешний контур + внутренний круг)
     path_d = f"M {cx + R_px},{cy} " 
     for angle in range(0, 361, 2):
         theta = math.radians(angle)
@@ -92,44 +84,53 @@ def create_svg_epure(p_bottom_kpa):
         path_d += f"L {x:.1f},{y:.1f} "
     path_d += "Z"
     
-    # Рисуем заштрихованную область
     svg.append(f'<path d="{path_d}" fill="url(#hatch)" stroke="none" />')
     
-    # Рисуем внешнюю границу эпюры
+    # 5. Внешняя граница эпюры
+    envelope_points = []
+    for angle in range(0, 361, 2):
+        theta = math.radians(angle)
+        p_val = abs(p_bottom_kpa * math.sin(theta))
+        L = p_val * scale
+        x = cx + (R_px + L) * math.cos(theta)
+        y = cy + (R_px + L) * math.sin(theta)
+        envelope_points.append(f"{x:.1f},{y:.1f}")
     envelope_path = "M " + " L ".join(envelope_points)
     svg.append(f'<path d="{envelope_path}" fill="none" stroke="#4169E1" stroke-width="2.5" />')
     
-    # 4. Рисуем стенку резервуара (круг)
+    # 6. Стенка резервуара
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
     
-    # 5. Рисуем векторы давления (стрелки снаружи внутрь)
+    # 7. Векторы давления (НАЧИНАЮТСЯ ОТ СТЕНКИ И ИДУТ НАРУЖУ)
     for angle in range(0, 360, 10):
         theta = math.radians(angle)
         p_val = abs(p_bottom_kpa * math.sin(theta))
         L = p_val * scale
         
-        # Если давление близко к нулю (на оси X), не рисуем стрелку
-        if L > 2:
-            x1 = cx + (R_px + L) * math.cos(theta) # Начало (снаружи)
-            y1 = cy + (R_px + L) * math.sin(theta)
-            x2 = cx + R_px * math.cos(theta)       # Конец (на стенке)
-            y2 = cy + R_px * math.sin(theta)
+        if L > 2: # Если давление не ноль
+            # Начало на стенке
+            x1 = cx + R_px * math.cos(theta)       
+            y1 = cy + R_px * math.sin(theta)
+            # Конец на внешней эпюре
+            x2 = cx + (R_px + L) * math.cos(theta) 
+            y2 = cy + (R_px + L) * math.sin(theta)
+            
+            # Линия от стенки наружу с маркером
             svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4169E1" stroke-width="2" marker-end="url(#arrow)" />')
             
-    # 6. Подписи осей и значений (идеально по центру)
-    # Подпись Y (сверху)
+    # 8. Подписи осей и значений
+    # Ось Y
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 50}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="middle">Y</text>')
-    # Подпись X (справа)
+    # Ось X
     svg.append(f'<text x="{cx + R_px + max_len + 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="start">X</text>')
-    # Подпись X (слева)
     svg.append(f'<text x="{cx - R_px - max_len - 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="end">X</text>')
     
-    # Значения максимального давления (сверху и снизу)
+    # Значения давления
     p_text = f"{p_bottom_kpa:.1f} кПа"
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 25}" fill="#4169E1" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">{p_text}</text>')
     svg.append(f'<text x="{cx}" y="{cy + R_px + max_len + 35}" fill="#4169E1" font-family="sans-serif" font-size="15" font-weight="bold" text-anchor="middle">{p_text}</text>')
     
-    # Ноль в центре
+    # Ноль
     svg.append(f'<text x="{cx - 15}" y="{cy - 10}" fill="#aaa" font-family="sans-serif" font-size="14">0</text>')
     
     svg.append('</svg>')
