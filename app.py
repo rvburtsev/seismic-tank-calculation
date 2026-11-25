@@ -74,58 +74,71 @@ col_graph1, col_graph2 = st.columns([1, 1])
 
 with col_graph1:
     st.subheader("Эпюра по высоте")
-    # Готовим данные для Altair
     df_height = pd.DataFrame({"Высота z, м": z_points, "Давление, кПа": [p/1000 for p in p_points]})
     
-    # Строим красивую закрашенную эпюру
     chart1 = alt.Chart(df_height).mark_area(
         color='crimson', opacity=0.4, line={'color': 'crimson', 'strokeWidth': 2}
     ).encode(
-        x=alt.X('Давление, кПа:Q', title='Давление \(p_m(z)\), кПа'),
-        y=alt.Y('Высота z, м:Q', title='Высота \(z\), м', scale=alt.Scale(domain=[0, H_input]))
-    ).properties(height=400)
+        x=alt.X('Давление, кПа:Q', title='Давление pm(z), кПа'),
+        y=alt.Y('Высота z, м:Q', title='Высота z, м', scale=alt.Scale(domain=[0, H_input]))
+    ).properties(height=450)
     
     st.altair_chart(chart1, use_container_width=True)
 
 with col_graph2:
-    st.subheader("Вид сверху (Рис. 11)")
-    # Строим векторы давления (стрелки), как на чертеже
-    theta = [math.radians(a) for a in range(0, 361, 10)]
-    # Давление по формуле p = p_max * sin(theta)
-    p_circle = [abs((p_bottom/1000) * math.sin(t)) for t in theta]
+    st.subheader("Эпюра давления по окружности")
     
-    # Переводим в координаты X, Y для рисования
-    x_start = [r_input * math.cos(t) for t in theta]
-    y_start = [r_input * math.sin(t) for t in theta]
-    # Длина вектора зависит от давления (масштабируем для красоты)
-    scale_factor = r_input / (p_bottom/1000) * 0.8 if p_bottom > 0 else 0
-    x_end = [(r_input - p * scale_factor) * math.cos(t) for p, t in zip(p_circle, theta)]
-    y_end = [(r_input - p * scale_factor) * math.sin(t) for p, t in zip(p_circle, theta)]
+    # Подготовка данных для векторов
+    theta_deg = list(range(0, 360, 10)) # Каждые 10 градусов
+    theta_rad = [math.radians(a) for a in theta_deg]
     
-    df_polar = pd.DataFrame({'x': x_start, 'y': y_start, 'x2': x_end, 'y2': y_end})
+    # Формула (21): p = p_max * sin(theta). 
+    # Векторы направлены от стенки к центру (показываем давление на стенку)
+    # Масштабируем длину вектора для красоты графика
+    scale = (r_input * 0.8) / (p_bottom/1000) if p_bottom > 0 else 0
     
-    # Рисуем контур резервуара (окружность)
-    circle_theta = [math.radians(a) for a in range(0, 361, 5)]
+    x_wall = [r_input * math.cos(t) for t in theta_rad]
+    y_wall = [r_input * math.sin(t) for t in theta_rad]
+    
+    # Конец вектора (смещение внутрь)
+    x_end = [(r_input - abs((p_bottom/1000) * math.sin(t)) * scale) * math.cos(t) for t in theta_rad]
+    y_end = [(r_input - abs((p_bottom/1000) * math.sin(t)) * scale) * math.sin(t) for t in theta_rad]
+    
+    df_vec = pd.DataFrame({'x': x_wall, 'y': y_wall, 'x2': x_end, 'y2': y_end})
+    
+    # Контур резервуара
+    circle_rad = [math.radians(a) for a in range(0, 361, 5)]
     df_circle = pd.DataFrame({
-        'x': [r_input * math.cos(t) for t in circle_theta],
-        'y': [r_input * math.sin(t) for t in circle_theta]
+        'x': [r_input * math.cos(t) for t in circle_rad],
+        'y': [r_input * math.sin(t) for t in circle_rad]
     })
     
-    # График векторов
-    chart_vec = alt.Chart(df_polar).mark_rule(color='royalblue', strokeWidth=2).encode(
+    # Оси X и Y
+    df_axes = pd.DataFrame({
+        'x': [-r_input*1.3, r_input*1.3, 0, 0],
+        'y': [0, 0, -r_input*1.3, r_input*1.3]
+    })
+    
+    # Создаем графики
+    chart_circle = alt.Chart(df_circle).mark_line(color='black', strokeWidth=3).encode(
+        x=alt.X('x:Q', scale=alt.Scale(domain=[-r_input*1.4, r_input*1.4]), axis=None),
+        y=alt.Y('y:Q', scale=alt.Scale(domain=[-r_input*1.4, r_input*1.4]), axis=None)
+    )
+    
+    chart_axes = alt.Chart(df_axes).mark_line(color='gray', strokeWidth=1, strokeDash=[5,5]).encode(
+        x='x:Q', y='y:Q'
+    )
+    
+    chart_vec = alt.Chart(df_vec).mark_rule(color='royalblue', strokeWidth=2).encode(
         x='x:Q', y='y:Q', x2='x2:Q', y2='y2:Q'
     )
     
-    # График контура
-    chart_circle = alt.Chart(df_circle).mark_line(color='black', strokeWidth=2).encode(
-        x=alt.X('x:Q', scale=alt.Scale(domain=[-r_input*1.2, r_input*1.2])),
-        y=alt.Y('y:Q', scale=alt.Scale(domain=[-r_input*1.2, r_input*1.2]))
+    # Объединяем всё вместе с жесткой привязкой пропорций 1:1 (чтобы был идеальный круг)
+    final_polar = (chart_axes + chart_circle + chart_vec).properties(
+        width=450, height=450, 
+        title=alt.TitleParams("Формула (21): pm(θ) = pm * sin(θ)", anchor='middle')
+    ).configure_view(
+        strokeWidth=0  # Убираем рамку вокруг графика
     )
     
-    # Объединяем графики
-    final_polar = (chart_circle + chart_vec).properties(
-        height=400,
-        # Отключаем сетку и оси для красоты, как на чертеже
-    ).configure_axis(grid=False, domain=False, labels=False, ticks=False, title=None)
-    
-    st.altair_chart(final_polar, use_container_width=True)
+    st.altair_chart(final_polar)
