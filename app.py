@@ -41,12 +41,12 @@ def get_K1_value(z_H, h0):
     weight = (h0 - h0_1) / (h0_2 - h0_1) if h0_2 != h0_1 else 0
     return k1_1 + weight * (k1_2 - k1_1)
 
-# --- ФУНКЦИЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG) ---
+# --- ФУНКЦИЯ ОТРИСОВКИ КРУГОВОЙ ЭПЮРЫ (SVG БЕЗ СТРЕЛОК) ---
 def create_svg_epure(p_bottom_kpa):
     size = 600
     cx, cy = size / 2, size / 2
     R_px = 150         # Радиус резервуара
-    max_len = 100      # Максимальная длина вектора давления
+    max_len = 100      # Максимальная длина эпюры
     
     scale = max_len / p_bottom_kpa if p_bottom_kpa > 0 else 0
     
@@ -93,53 +93,10 @@ def create_svg_epure(p_bottom_kpa):
     envelope_path = "M " + " L ".join(envelope_points)
     svg.append(f'<path d="{envelope_path}" fill="none" stroke="#4169E1" stroke-width="2.5" />')
     
-    # 5. Стенка резервуара
+    # 5. Стенка резервуара (Внутренний круг)
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
-    
-    # 6. Векторы давления (ОТ ВНЕШНЕЙ ЭПЮРЫ К СТЕНКЕ)
-    for angle in range(0, 360, 10):
-        theta = math.radians(angle)
-        p_val = abs(p_bottom_kpa * math.sin(theta))
-        L = p_val * scale
-        
-        if L > 5: # Если давление достаточно велико, чтобы рисовать
-            # Начало на внешней эпюре
-            x1 = cx + (R_px + L) * math.cos(theta) 
-            y1 = cy + (R_px + L) * math.sin(theta)
             
-            # Конец (острие) на стенке
-            x2 = cx + R_px * math.cos(theta)       
-            y2 = cy + R_px * math.sin(theta)
-            
-            # Линия от внешней эпюры до стенки
-            svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4169E1" stroke-width="2" />')
-            
-            # Ручная отрисовка треугольника-стрелки (надежнее встроенных маркеров)
-            arrow_len = 8
-            arrow_width = 4
-            
-            # Вектор направления (внутрь)
-            dx = math.cos(theta)
-            dy = math.sin(theta)
-            
-            # Координаты основания стрелки
-            bx = x2 + arrow_len * dx
-            by = y2 + arrow_len * dy
-            
-            # Перпендикулярный вектор
-            px = -dy
-            py = dx
-            
-            # Координаты углов треугольника
-            lx = bx + arrow_width * px
-            ly = by + arrow_width * py
-            rx = bx - arrow_width * px
-            ry = by - arrow_width * py
-            
-            # Острие x2, y2 смотрит на центр, основание снаружи
-            svg.append(f'<polygon points="{x2:.1f},{y2:.1f} {lx:.1f},{ly:.1f} {rx:.1f},{ry:.1f}" fill="#4169E1" />')
-            
-    # 7. Подписи осей и значений
+    # 6. Подписи осей и значений
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 50}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="middle">Y</text>')
     svg.append(f'<text x="{cx + R_px + max_len + 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="start">X</text>')
     svg.append(f'<text x="{cx - R_px - max_len - 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="end">X</text>')
