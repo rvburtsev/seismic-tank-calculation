@@ -52,23 +52,18 @@ def create_svg_epure(p_bottom_kpa):
     
     svg = [f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}" xmlns="http://www.w3.org/2000/svg" style="background-color: transparent; margin: 0 auto; display: block;">']
     
-    # 1. Маркер для стрелки (указывает на КОНЕЦ линии)
+    # 1. Штриховка
     svg.append('<defs>')
-    svg.append('<marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="6" markerHeight="6" orient="auto">')
-    svg.append('<path d="M 0 0 L 10 5 L 0 10 z" fill="#4169E1" />')
-    svg.append('</marker>')
-    
-    # 2. Штриховка
     svg.append('<pattern id="hatch" width="8" height="8" patternTransform="rotate(45 0 0)" patternUnits="userSpaceOnUse">')
     svg.append('<line x1="0" y1="0" x2="0" y2="8" stroke="#4169E1" stroke-width="1.5" />')
     svg.append('</pattern>')
     svg.append('</defs>')
     
-    # 3. Оси координат
+    # 2. Оси координат
     svg.append(f'<line x1="{cx - R_px - max_len - 40}" y1="{cy}" x2="{cx + R_px + max_len + 40}" y2="{cy}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     svg.append(f'<line x1="{cx}" y1="{cy - R_px - max_len - 40}" x2="{cx}" y2="{cy + R_px + max_len + 40}" stroke="#888" stroke-width="1.5" stroke-dasharray="6,4" />')
     
-    # 4. Формируем заштрихованную область
+    # 3. Формируем заштрихованную область (внешний контур + внутренний круг)
     path_d = f"M {cx + R_px},{cy} " 
     for angle in range(0, 361, 2):
         theta = math.radians(angle)
@@ -86,7 +81,7 @@ def create_svg_epure(p_bottom_kpa):
     
     svg.append(f'<path d="{path_d}" fill="url(#hatch)" stroke="none" />')
     
-    # 5. Внешняя граница эпюры
+    # 4. Внешняя граница эпюры
     envelope_points = []
     for angle in range(0, 361, 2):
         theta = math.radians(angle)
@@ -98,26 +93,53 @@ def create_svg_epure(p_bottom_kpa):
     envelope_path = "M " + " L ".join(envelope_points)
     svg.append(f'<path d="{envelope_path}" fill="none" stroke="#4169E1" stroke-width="2.5" />')
     
-    # 6. Стенка резервуара
+    # 5. Стенка резервуара
     svg.append(f'<circle cx="{cx}" cy="{cy}" r="{R_px}" stroke="#ffffff" stroke-width="3" fill="none" />')
     
-    # 7. Векторы давления (ОТ ВНЕШНЕЙ ЭПЮРЫ К СТЕНКЕ)
+    # 6. Векторы давления (ОТ ВНЕШНЕЙ ЭПЮРЫ К СТЕНКЕ)
     for angle in range(0, 360, 10):
         theta = math.radians(angle)
         p_val = abs(p_bottom_kpa * math.sin(theta))
         L = p_val * scale
         
-        if L > 2:
+        if L > 5: # Если давление достаточно велико, чтобы рисовать
             # Начало на внешней эпюре
             x1 = cx + (R_px + L) * math.cos(theta) 
             y1 = cy + (R_px + L) * math.sin(theta)
-            # Конец на стенке (острие стрелки)
+            
+            # Конец (острие) на стенке
             x2 = cx + R_px * math.cos(theta)       
             y2 = cy + R_px * math.sin(theta)
             
-            svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4169E1" stroke-width="2" marker-end="url(#arrow)" />')
+            # Линия от внешней эпюры до стенки
+            svg.append(f'<line x1="{x1:.1f}" y1="{y1:.1f}" x2="{x2:.1f}" y2="{y2:.1f}" stroke="#4169E1" stroke-width="2" />')
             
-    # 8. Подписи осей и значений
+            # Ручная отрисовка треугольника-стрелки (надежнее встроенных маркеров)
+            arrow_len = 8
+            arrow_width = 4
+            
+            # Вектор направления (внутрь)
+            dx = math.cos(theta)
+            dy = math.sin(theta)
+            
+            # Координаты основания стрелки
+            bx = x2 + arrow_len * dx
+            by = y2 + arrow_len * dy
+            
+            # Перпендикулярный вектор
+            px = -dy
+            py = dx
+            
+            # Координаты углов треугольника
+            lx = bx + arrow_width * px
+            ly = by + arrow_width * py
+            rx = bx - arrow_width * px
+            ry = by - arrow_width * py
+            
+            # Острие x2, y2 смотрит на центр, основание снаружи
+            svg.append(f'<polygon points="{x2:.1f},{y2:.1f} {lx:.1f},{ly:.1f} {rx:.1f},{ry:.1f}" fill="#4169E1" />')
+            
+    # 7. Подписи осей и значений
     svg.append(f'<text x="{cx}" y="{cy - R_px - max_len - 50}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="middle">Y</text>')
     svg.append(f'<text x="{cx + R_px + max_len + 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="start">X</text>')
     svg.append(f'<text x="{cx - R_px - max_len - 50}" y="{cy + 6}" fill="#aaa" font-family="sans-serif" font-size="16" text-anchor="end">X</text>')
